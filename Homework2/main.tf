@@ -18,8 +18,8 @@ resource "aws_instance" "web_app" {
 	ami           = "ami-0892d3c7ee96c0bf7"
 	instance_type = "t3.micro"
 	key_name = "develop"
-	vpc_security_group_ids = [aws_security_group.default.id]
-    subnet_id = "${element(aws_subnet.public_subnet.*.id, count.index)}"
+	vpc_security_group_ids = [aws_security_group.public.id]
+        subnet_id = "${element(aws_subnet.public_subnet.*.id, count.index)}"
 	user_data = trimspace(<<EOF
 		#! /bin/bash
         apt-get update
@@ -55,8 +55,8 @@ resource "aws_instance" "db_app" {
 	ami           = "ami-0892d3c7ee96c0bf7"
 	instance_type = "t3.micro"
 	key_name = "develop"
-	vpc_security_group_ids = [aws_security_group.default.id]
-    subnet_id = "${element(aws_subnet.private_subnet.*.id, count.index)}"
+	vpc_security_group_ids = [aws_security_group.private.id]
+        subnet_id = "${element(aws_subnet.private_subnet.*.id, count.index)}"
   	user_data = trimspace(<<EOF
 		#! /bin/bash
         apt-get update
@@ -176,25 +176,12 @@ resource "aws_route_table_association" "private" {
   subnet_id      = "${element(aws_subnet.private_subnet.*.id, count.index)}"
   route_table_id = "${aws_route_table.private.id}"
 }
-/*==== VPC's Default Security Group ======*/
-resource "aws_security_group" "default" {
-  name        = "aws-default-sg"
-  description = "Default security group to allow inbound/outbound from the VPC"
+/*==== VPC's public Security Group ======*/
+resource "aws_security_group" "public" {
+  name        = "aws-public-sg"
+  description = "public security group to allow inbound/outbound from the VPC"
   vpc_id      = "${aws_vpc.vpc.id}"
   depends_on  = [aws_vpc.vpc]
-#  ingress {
-#    from_port = "0"
-#    to_port   = "0"
-#    protocol  = "-1"
-#    self      = true
-#  }
-#
-#  egress {
-#    from_port = "0"
-#    to_port   = "0"
-#    protocol  = "-1"
-#    self      = "true"
-#  }
     ingress {
 	from_port   = 80
 	to_port     = 80
@@ -202,12 +189,6 @@ resource "aws_security_group" "default" {
 	cidr_blocks = ["0.0.0.0/0"]
   }
   ingress {
-	from_port   = 0
-	to_port     = 0
-	protocol    = "-1"
-	cidr_blocks = ["0.0.0.0/0"]
-  }
-  ingress {
 	from_port   = 22
 	to_port     = 22
 	protocol    = "tcp"
@@ -218,28 +199,40 @@ resource "aws_security_group" "default" {
 	to_port     = 0
 	protocol    = "-1"
 	cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-	from_port   = 22
-	to_port     = 22
-	protocol    = "tcp"
-	cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-	from_port   = 80
-	to_port     = 80
-	  protocol    = "tcp"
-	  cidr_blocks = ["0.0.0.0/0"]
   }
   tags = {
-    Environment = "aws-default-sec-group"
+    Environment = "aws-public-sec-group"
   }
 }
-# Create a new load balancer
+
+/*==== VPC's private Security Group ======*/
+resource "aws_security_group" "private" {
+  name        = "aws-private-sg"
+  description = "private security group to allow inbound/outbound from the VPC"
+  vpc_id      = "${aws_vpc.vpc.id}"
+  depends_on  = [aws_vpc.vpc]
+  ingress {
+	from_port   = 0
+	to_port     = 0
+	protocol    = "-1"
+	cidr_blocks = ["10.0.0.0/16"]
+  }
+  egress {
+	from_port   = 0
+	to_port     = 0
+	protocol    = "-1"
+	cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = {
+    Environment = "aws-private-sec-group"
+  }
+}
+
+/*==== Create a new load balancer======*/  
 resource "aws_elb" "terra-elb" {
   name               = "terra-elb"
-  subnets = [aws_subnet.public_subnet[0].id,aws_subnet.public_subnet[1].id,aws_subnet.public_subnet[0].id,aws_subnet.public_subnet[1].id]
-  security_groups = [aws_security_group.default.id]
+  subnets = [aws_subnet.public_subnet[0].id,aws_subnet.public_subnet[1].id]
+  security_groups = [aws_security_group.public.id]
 
   listener {
     instance_port     = 80
@@ -256,7 +249,7 @@ resource "aws_elb" "terra-elb" {
     interval            = 30
   }
 
-  instances                   = [aws_instance.db_app[0].id,aws_instance.db_app[1].id,aws_instance.web_app[0].id,aws_instance.web_app[1].id]
+  instances                   = [aws_instance.db_app[0].id,aws_instance.db_app[1].id]
   cross_zone_load_balancing   = true
   idle_timeout                = 100
   connection_draining         = true
